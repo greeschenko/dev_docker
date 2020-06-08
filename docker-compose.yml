@@ -1,0 +1,117 @@
+# Последняя версия docker-compose
+version: '3'
+
+# Создаем общую сеть deafult для всех контейнеров
+networks:
+  default:
+    driver: bridge
+
+# Создаем отдельные контейнеры
+services:
+  # Контейнер с веб-приложением
+  app:
+    # Собираем из Dockerfile
+    build:
+      # Корнем указываем корень основного проекта
+      context: ../
+      dockerfile: ./docker/Dockerfile
+    # Показываем наружу 80 порт
+    ports:
+      - "80:80"
+    # Подключаем к общей сети с другими контейнерами
+    networks:
+      - default
+    # Запускаем только после db
+    depends_on:
+      - golang
+      - redis
+      - db
+    # Линкуем внешнюю папку с исходниками внутрь
+    volumes:
+      - "../:/var/www/app"
+      # Так же линкуем конфиг для nginx
+      - "./conf/nginx:/etc/nginx/sites-available"
+  # Контейнер с базой данных
+  golang:
+    image: golang:1.13
+    ports:
+        - "1888:1888"
+          # Подключаем к общей сети с другими контейнерами
+    networks:
+        - default
+          # Запускаем только после db
+    depends_on:
+        #- mysqldb
+        - postgresdb
+        - db
+        - mongodb
+          #- mirror
+          #- redis
+          # Линкуем внешнюю папку с исходниками внутрь
+    volumes:
+        - "../prosale3trade/:/go/src/app"
+    command: "./src/app/prosale3trade test"
+  db:
+    image: mysql:5.7
+    # Подключаем к общей сети с другими контейнерами
+    networks:
+      - default
+    # Показываем наружу порт
+    ports:
+      - "3336:3306"
+    # Задаем параметры для инициализации БД
+    environment:
+      # Пароль к БД
+      MYSQL_ROOT_PASSWORD: rootpass
+      # Создаваемая по умолчанию бд
+      MYSQL_DATABASE: prozorrodev
+    # Линкуем внешнюю папку для хранения БД
+    volumes:
+      - "./database:/var/lib/mysql"
+      - "./conf/mysql:/etc/mysql/conf.d"
+  postgresdb:
+    image: postgres
+    restart: always
+    networks:
+        - default
+          # Показываем наружу порт
+    environment:
+        POSTGRES_PASSWORD: rootpass
+    volumes:
+        - ./postgres-volume:/var/lib/postgresql/data
+  phpmyadmin:
+    image: phpmyadmin/phpmyadmin
+    ports:
+      - '8080:80'
+    depends_on:
+      - db
+    networks:
+      - default
+  redis:
+    image: redis:latest
+    command: ["redis-server", "--appendonly", "yes"]
+    networks:
+      - default
+    ports:
+      - "6379"
+    volumes:
+      - "./data/redis:/data"
+  mirror:
+    image: 'mirror-clients'
+    command: ["-m", "https://procedure-sandbox.prozorro.sale/api/mirror/procedures", "-u", "mongodb://prouser:prouserpass@mongodb:27017", "-n", "mongodb", "-ns", "procedures.procedures"]
+    networks:
+      - default
+    depends_on:
+      - mongodb
+  mongodb:
+    image: 'mongo'
+    environment:
+        MONGO_INITDB_DATABASE: prosale3trade
+        MONGO_INITDB_ROOT_USERNAME: prouser
+        MONGO_INITDB_ROOT_PASSWORD: prouserpass
+    volumes:
+        - ./mongo-volume:/data/db
+    ports:
+        - '27017-27019:27017-27019'
+    networks:
+      - default
